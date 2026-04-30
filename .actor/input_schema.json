@@ -1,0 +1,33 @@
+{
+  "title": "Wellfound Jobs Scraper",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "maxItems": {
+      "title": "Max Items",
+      "type": "integer",
+      "description": "Free users: Limited to 10 items (preview). Paid users: Optional, max 1,000,000.",
+      "editor": "number",
+      "prefill": 10,
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "searchUrl": {
+      "title": "Wellfound search URL",
+      "type": "string",
+      "description": "Direct Wellfound search URL. Examples: https://wellfound.com/jobs (all jobs), https://wellfound.com/role/software-engineer, https://wellfound.com/location/san-francisco.",
+      "editor": "textfield",
+      "prefill": "https://wellfound.com/jobs",
+      "sectionCaption": "Search",
+      "sectionDescription": "Provide the full Wellfound search URL. Camoufox + residential proxy will handle the DataDome challenge automatically."
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "US residential proxy is recommended for reliable DataDome bypass.",
+      "editor": "proxy",
+      "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "US" }
+    }
+  },
+  "required": []
+}
