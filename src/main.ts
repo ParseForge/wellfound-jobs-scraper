@@ -144,10 +144,13 @@ try {
     for (const job of jobs) {
         if (pushed >= effectiveMaxItems) break;
         const slug = job.url.split('/jobs/')[1]?.split('?')[0] ?? null;
+        const slugTitle = slug
+            ? slug.replace(/^\d+-/, '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+            : null;
         const record = {
             jobId: slug,
             url: job.url,
-            title: job.title,
+            title: job.title || slugTitle,
             company: job.company,
             location: job.location,
             salary: job.salary,
