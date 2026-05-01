@@ -8,8 +8,18 @@ const { Camoufox } = require('camoufox');
 interface Input {
     maxItems?: number;
     searchUrl?: string;
+    searchUrls?: string[];
     proxyConfiguration?: any;
 }
+
+const DEFAULT_URLS = [
+    'https://wellfound.com/jobs',
+    'https://wellfound.com/role/software-engineer',
+    'https://wellfound.com/role/product-manager',
+    'https://wellfound.com/role/data-scientist',
+    'https://wellfound.com/role/designer',
+    'https://wellfound.com/role/marketing',
+];
 
 const STARTUP = ['💼 Pulling Wellfound jobs…', '🚀 Crawling startup talent…', '📋 Reading the latest postings…'];
 const DONE = ['🎉 Wellfound jobs delivered.', '✅ Postings ready.', '🚀 Talent feed captured.'];
@@ -43,10 +53,12 @@ if (!userIsPaying) {
     }
 }
 
-const searchUrl = (input.searchUrl ?? 'https://wellfound.com/jobs').trim();
+const searchUrls = (input.searchUrls && input.searchUrls.length > 0)
+    ? input.searchUrls
+    : input.searchUrl ? [input.searchUrl] : DEFAULT_URLS;
 
 console.log(c.cyan('\n🛰️  Arguments:'));
-console.log(c.green(`   🟩 searchUrl : ${searchUrl}`));
+console.log(c.green(`   🟩 searchUrls : ${searchUrls.length} URLs`));
 console.log(c.green(`   🟩 maxItems : ${effectiveMaxItems}`));
 console.log('');
 console.log(c.magenta(`📬 ${pick(STARTUP)}\n`));
@@ -91,68 +103,74 @@ async function handleDataDome(): Promise<boolean> {
     return false;
 }
 
-async function warmupAndNavigate(): Promise<boolean> {
+async function warmup(): Promise<boolean> {
     try {
         log.info('🌐 Warmup: google.com');
         await page.goto('https://www.google.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await sleep(2000);
-
         log.info('🌐 Warmup: wellfound.com homepage');
         await page.goto('https://wellfound.com/', { waitUntil: 'domcontentloaded', timeout: 45000 });
         await sleep(3000);
         await handleDataDome();
-
-        log.info(`📡 ${searchUrl}`);
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await sleep(3000);
-        await handleDataDome();
         return true;
     } catch (e: any) {
-        log.warning(`Navigation: ${e.message}`);
+        log.warning(`Warmup: ${e.message}`);
         return false;
+    }
+}
+
+async function harvestUrl(url: string, allJobs: Map<string, any>): Promise<void> {
+    if (allJobs.size >= effectiveMaxItems) return;
+    log.info(`📡 ${url}`);
+    try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await sleep(2500);
+        await handleDataDome();
+        await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+        let lastCount = 0;
+        for (let i = 0; i < 6; i++) {
+            const currentCount = await page.evaluate(() => document.querySelectorAll('a[href*="/jobs/"]').length);
+            if (i > 0 && currentCount === lastCount) break;
+            lastCount = currentCount;
+            await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
+            await sleep(1200);
+        }
+        const jobs = await page.evaluate(() => {
+            const out: any[] = [];
+            const cards = document.querySelectorAll('[data-test="JobSearchCard"], [class*="JobCard"], [class*="job-listing"], a[href*="/jobs/"]');
+            const seen = new Set<string>();
+            cards.forEach((card) => {
+                const link = (card as HTMLElement).querySelector('a[href*="/jobs/"]') ?? card;
+                const href = (link as HTMLAnchorElement)?.href ?? '';
+                if (!href || seen.has(href) || !href.includes('/jobs/')) return;
+                seen.add(href);
+                const title = (card as HTMLElement).querySelector('h3, h2, [class*="title"]')?.textContent?.trim() ?? null;
+                const company = (card as HTMLElement).querySelector('[class*="company"], [class*="startup"]')?.textContent?.trim() ?? null;
+                const location = (card as HTMLElement).querySelector('[class*="location"]')?.textContent?.trim() ?? null;
+                const salary = (card as HTMLElement).querySelector('[class*="salary"], [class*="compensation"]')?.textContent?.trim() ?? null;
+                const remote = (card as HTMLElement).querySelector('[class*="remote"]')?.textContent?.trim() ?? null;
+                out.push({ url: href, title, company, location, salary, remote });
+            });
+            return out;
+        });
+        for (const j of jobs) if (!allJobs.has(j.url)) allJobs.set(j.url, j);
+        log.info(`   +${jobs.length} (total ${allJobs.size})`);
+    } catch (e: any) {
+        log.warning(`   ${e.message}`);
     }
 }
 
 let pushed = 0;
 try {
-    const ok = await warmupAndNavigate();
-    if (!ok) throw new Error('Failed to navigate past DataDome');
-
-    await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-
-    // Scroll to load more jobs
-    let lastCount = 0;
-    for (let i = 0; i < 12; i++) {
-        const currentCount = await page.evaluate(() => document.querySelectorAll('a[href*="/jobs/"]').length);
-        if (currentCount >= effectiveMaxItems * 1.3) break;
-        if (i > 1 && currentCount === lastCount) break;
-        lastCount = currentCount;
-        await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
-        await sleep(1500);
+    if (!await warmup()) throw new Error('Warmup failed');
+    const allJobs = new Map<string, any>();
+    for (const u of searchUrls) {
+        if (allJobs.size >= effectiveMaxItems) break;
+        await harvestUrl(u, allJobs);
     }
+    log.info(`📊 ${allJobs.size} unique jobs across ${searchUrls.length} pages`);
 
-    const jobs = await page.evaluate(() => {
-        const out: any[] = [];
-        const cards = document.querySelectorAll('[data-test="JobSearchCard"], [class*="JobCard"], [class*="job-listing"], a[href*="/jobs/"]');
-        const seen = new Set<string>();
-        cards.forEach((card) => {
-            const link = (card as HTMLElement).querySelector('a[href*="/jobs/"]') ?? card;
-            const href = (link as HTMLAnchorElement)?.href ?? '';
-            if (!href || seen.has(href) || !href.includes('/jobs/')) return;
-            seen.add(href);
-            const title = (card as HTMLElement).querySelector('h3, h2, [class*="title"]')?.textContent?.trim() ?? null;
-            const company = (card as HTMLElement).querySelector('[class*="company"], [class*="startup"]')?.textContent?.trim() ?? null;
-            const location = (card as HTMLElement).querySelector('[class*="location"]')?.textContent?.trim() ?? null;
-            const salary = (card as HTMLElement).querySelector('[class*="salary"], [class*="compensation"]')?.textContent?.trim() ?? null;
-            const remote = (card as HTMLElement).querySelector('[class*="remote"]')?.textContent?.trim() ?? null;
-            out.push({ url: href, title, company, location, salary, remote });
-        });
-        return out;
-    });
-
-    log.info(`📊 ${jobs.length} jobs found on page`);
-
-    for (const job of jobs) {
+    for (const job of allJobs.values()) {
         if (pushed >= effectiveMaxItems) break;
         const slug = job.url.split('/jobs/')[1]?.split('?')[0] ?? null;
         const slugTitle = slug
