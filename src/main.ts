@@ -120,6 +120,17 @@ try {
 
     await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
+    // Scroll to load more jobs
+    let lastCount = 0;
+    for (let i = 0; i < 12; i++) {
+        const currentCount = await page.evaluate(() => document.querySelectorAll('a[href*="/jobs/"]').length);
+        if (currentCount >= effectiveMaxItems * 1.3) break;
+        if (i > 1 && currentCount === lastCount) break;
+        lastCount = currentCount;
+        await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
+        await sleep(1500);
+    }
+
     const jobs = await page.evaluate(() => {
         const out: any[] = [];
         const cards = document.querySelectorAll('[data-test="JobSearchCard"], [class*="JobCard"], [class*="job-listing"], a[href*="/jobs/"]');
@@ -127,7 +138,7 @@ try {
         cards.forEach((card) => {
             const link = (card as HTMLElement).querySelector('a[href*="/jobs/"]') ?? card;
             const href = (link as HTMLAnchorElement)?.href ?? '';
-            if (!href || seen.has(href)) return;
+            if (!href || seen.has(href) || !href.includes('/jobs/')) return;
             seen.add(href);
             const title = (card as HTMLElement).querySelector('h3, h2, [class*="title"]')?.textContent?.trim() ?? null;
             const company = (card as HTMLElement).querySelector('[class*="company"], [class*="startup"]')?.textContent?.trim() ?? null;
