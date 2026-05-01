@@ -61,13 +61,12 @@ const proxyUrl = proxy ? await proxy.newUrl(`session_${Date.now()}`) : undefined
 log.info('🦊 Spawning Camoufox…');
 const browser = await Camoufox({
     headless: 'virtual',
-    geoip: true,
+    proxy: proxyUrl ? { server: proxyUrl } : undefined,
     humanize: true,
-    args: proxyUrl ? ['--proxy-server=' + proxyUrl] : [],
+    geoip: true,
 });
-
-const context = await browser.newContext();
-const page = await context.newPage();
+const context = browser.contexts?.()[0] || browser;
+const page = context.pages?.()[0] || (await browser.newPage());
 
 async function handleDataDome(): Promise<boolean> {
     const dd = await page.$('iframe[src*="captcha-delivery.com"]').catch(() => null);
