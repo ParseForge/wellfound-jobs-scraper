@@ -163,7 +163,7 @@ try {
     await Actor.pushData([{ error: err.message }]);
 }
 
-await browser.close().catch(() => {});
+try { await browser.close(); } catch {}
 
 if (pushed === 0) await Actor.pushData([{ error: 'No jobs extracted. DataDome challenge may not have cleared.' }]);
 log.info(c.green(`✅ Pushed ${pushed} jobs`));
