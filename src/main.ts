@@ -56,7 +56,7 @@ const proxy = await Actor.createProxyConfiguration(input.proxyConfiguration ?? {
     apifyProxyGroups: ['RESIDENTIAL'],
     apifyProxyCountry: 'US',
 });
-const proxyUrl = proxy ? await proxy.newUrl(`session-${Date.now()}`) : undefined;
+const proxyUrl = proxy ? await proxy.newUrl(`session_${Date.now()}`) : undefined;
 
 log.info('🦊 Spawning Camoufox…');
 const browser = await Camoufox({
